@@ -1,0 +1,128 @@
+-- ID: 10435788 
+-- Name: Kristin Kim 
+-- I pledge my honor that I have abided by the Stevens Honors System
+
+-- 1. ---------------------
+with aggs as
+	(select cust, min(quant) min_q, max(quant) max_q, avg(quant) avg_q
+	from sales
+	group by cust),
+min_details as  --inclusive result, expanding the result as move
+	(select a.cust cust, min_q, prod min_prod, date min_date, state min_state --min_q, ... is the only thing, so no need to qualifying rest
+	from aggs a inner join sales s 
+	on a.cust= s.cust and a.min_q= s.quant
+	order by cust, prod)
+select m.cust, m.min_q, m.min_prod, m.min_date, m.min_state, aggs.max_q, prod max_prod, date max_date, state max_state, aggs.avg_q
+from sales s inner join aggs on aggs.cust= s.cust and aggs.max_q= s.quant
+inner join min_details m on m.cust = s.cust
+
+-- 2. ---------------------
+with oct as (
+	with aggs as (
+	select cust, prod, max(quant) oct_max
+	from sales
+	where month =10 and year>=2017
+	group by cust, prod
+	order by cust, prod)
+select aggs.cust, aggs.prod, oct_max, date
+from sales inner join aggs on sales.cust = aggs.cust and sales.prod = aggs.prod and sales.quant = oct_max),
+nov as(
+	with aggs as (
+	select cust, prod, min(quant) nov_min
+	from sales
+	where month =11
+	group by cust, prod
+	order by cust, prod)
+select aggs.cust, aggs.prod, nov_min, date
+from sales inner join aggs on sales.cust = aggs.cust and sales.prod = aggs.prod and sales.quant = nov_min),
+dec as(
+	with aggs as (
+	select cust, prod, min(quant) dec_min
+	from sales
+	where month =12
+	group by cust, prod
+	order by cust, prod)
+select aggs.cust, aggs.prod, dec_min, date
+from sales inner join aggs on sales.cust = aggs.cust and sales.prod = aggs.prod and sales.quant = dec_min)
+select oct.cust, oct.prod, oct.oct_max, oct.date, nov.nov_min, nov.date, dec.dec_min, dec.date
+from oct inner join nov on oct.cust= nov.cust and oct.prod= nov.prod
+inner join dec on oct.cust= dec.cust and oct.prod= dec.prod
+ 
+-- 3. ---------------------
+with base as 
+	(select month, prod, sum(quant) total_q
+	from sales 
+	group by month, prod
+	order by month),
+mppq as
+	(select month, max(total_q)  max_t
+	from base
+	group by month
+	order by month),
+lppq as
+	(select month, min(total_q) min_t
+	from base
+	group by month
+	order by month),
+mpp as
+	(select m.month, s.prod mos_prod, m.max_t mos_quant 
+	from mppq m, base s
+	where s.total_q = m.max_t)
+select l.month, mpp.mos_prod  most_popular_product, mpp.mos_quant  most_popular_total_q , s.prod least_popular_product, l.min_t least_pop_total_q
+from lppq l natural join base s natural join mpp
+where s.total_q = l.min_t
+
+-- 4. ---------------------
+with base as 
+	(select prod, month, sum(quant) total
+	from sales
+	group by prod, month
+	order by prod, month),
+ml as
+	(select prod, max(total) max, min(total) min
+	from base
+	group by prod),
+mfm as
+	(select base.prod prod, base.month most_fav_month
+	from ml, base
+	where ml.max = base.total)
+select mfm.prod, mfm.most_fav_month, base.month least_fav_mo
+from mfm natural join base natural join ml
+where ml.min = base.total
+order by prod
+
+-- 5. ---------------------
+with base as
+(select year, prod, cust, avg(quant) average, sum(quant) total, count(quant) count
+from sales
+group by year, prod, cust
+order by year, prod, cust),
+ct as 
+	(select year, prod, cust, state, avg(quant) ct_avg
+	from sales
+	group by year, prod, cust, state
+	 having state = 'CT'
+	order by year, prod, cust),
+ny as 
+	(select year, prod, cust, state, avg(quant) ny_avg
+	from sales
+	group by year, prod, cust, state
+	 having state = 'NY'
+	order by year, prod, cust),
+nj as 
+	(select year, prod, cust, state, avg(quant) nj_avg
+	from sales
+	group by year, prod, cust, state
+	 having state = 'NY'
+	order by year, prod, cust),
+pa as 
+	(select year, prod, cust, state, avg(quant) pa_avg
+	from sales
+	group by year, prod, cust, state
+	 having state = 'PA'
+	order by year, prod, cust)
+select base.year, base.prod, base.cust, ct.ct_avg, ny.ny_avg, nj.nj_avg, pa.pa_avg, base.average, base.total, base.count
+from base inner join ct on base.prod = ct.prod and base.year = ct.year and base.cust = ct.cust
+inner join ny on base.prod = ny.prod and base.year = ny.year and base.cust = ny.cust
+inner join nj on base.prod = nj.prod and base.year = nj.year and base.cust = nj.cust
+inner join pa on base.prod = pa.prod and base.year = pa.year and base.cust = pa.cust

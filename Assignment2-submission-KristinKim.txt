@@ -1,0 +1,88 @@
+-- Assignment 2 - Kristin Kim 
+-- I pledge my honor that I have abided by the Stevens Honors System. Kristin Kim
+
+-- 1.
+with base as (
+	select cust, prod, month, state, round(avg(quant)) avg_q
+	from sales 
+	group by cust, prod, month, state
+	order by cust, prod, month, state),
+other_prod as(
+	select  s1.cust, s1.prod, s1.month, s1.state, s1.avg_q cust_avg, round(avg(s2.quant)) other_prod_avg
+	from base s1 inner join sales s2 on
+	s1.cust = s2.cust and s1.prod != s2.prod and s1.month =s2.month and s1.state = s2.state
+	group by s1.cust, s1.prod, s1.month, s1.state, s1.avg_q
+	order by s1.cust, s1.prod, s1.month, s1.state),
+other_month as(
+	select  s1.cust, s1.prod, s1.month, s1.state, s1.cust_avg, s1.other_prod_avg, round(avg(s2.quant)) other_month_avg
+	from other_prod s1 inner join sales s2 on
+	 s1.cust = s2.cust and s1.prod = s2.prod and s1.month !=s2.month and s1.state = s2.state
+	group by s1.cust, s1.prod, s1.month, s1.state, s1.cust_avg, s1.other_prod_avg
+	order by s1.cust, s1.prod, s1.month, s1.state)
+select  s1.cust, s1.prod, s1.month, s1.state, s1.cust_avg, s1.other_prod_avg, s1.other_month_avg, round (avg(s2.quant)) other_state_avg
+from other_month s1 inner join sales s2 on s1.cust = s2.cust and s1.prod = s2.prod and s1.month =s2.month and s1.state != s2.state
+group by s1.cust, s1.prod, s1.month, s1.state, s1.cust_avg, s1.other_prod_avg, s1.other_month_avg
+order by s1.cust, s1.prod, s1.month, s1.state, s1.cust_avg, s1.other_prod_avg, s1.other_month_avg
+
+-- 2. 
+with q as (
+	SELECT cust, prod, state, quant, 
+		CASE  
+		WHEN 1<=month and month<=3  THEN 1
+		WHEN 4<=month and month<=6  THEN 2
+		WHEN 7<=month and month<=9  THEN 3
+		WHEN 10<=month and month<=12  THEN 4
+		END as quarter
+	from sales
+	order by cust, prod, state, quarter),
+avg as (
+	select cust, prod, state, quarter, round(avg(quant)) quarter_sum
+	from q
+	group by cust, prod, state, quarter
+	order by cust, prod, state, quarter), 
+before as(
+	select distinct q.cust, q.prod, q.state, q.quarter, a.quarter_sum before_avg
+	from q left outer join avg a on q.cust=a.cust and q.prod=a.prod and q.state=a.state and q.quarter-1=a.quarter
+	order by cust, prod, state, quarter)
+	select distinct b.cust, b.prod, b.state, b.quarter, b.before_avg, a.quarter_sum after_avg
+	from before b left outer join avg a on b.cust=a.cust and b.prod=a.prod and b.state=a.state and b.quarter+1=a.quarter
+	order by cust, prod, state, quarter
+
+-- 3. 
+with num as (
+	select prod, quant, row_number() over (partition by prod order by  sales.quant) as num
+	from sales
+	order by prod, quant, num),
+counts as (
+	select prod, count(prod)/2 med
+	from sales
+	group by prod
+	order by prod)
+select num.prod, num.quant median_quant
+from num, counts
+where num.num = counts.med and num.prod = counts.prod
+order by prod
+
+-- 4. 
+with sum as (
+	select cust, prod, month, sum(quant) q
+	from sales
+	group by cust, prod, month
+	order by cust, prod, month),
+cum_sum as(
+	select cust, prod, month,  sum(q) OVER (partition by cust, prod ORDER BY cust, prod, month) AS cum_sum
+	from sum
+	order by cust, prod, month), 
+total as (
+	select cust, prod,  sum(quant) total
+	from sales
+	group by cust, prod
+	order by cust, prod), 
+over as (
+	select c.cust cust, c.prod prod, month
+	from cum_sum c inner join total t on c.prod=t.prod and c.cust=t.cust
+	where c.cum_sum >= t.total *0.75)
+select cust, prod, min(month)
+from over
+group by cust, prod
+order by cust, prod
